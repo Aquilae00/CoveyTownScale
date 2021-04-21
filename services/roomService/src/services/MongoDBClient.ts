@@ -1,4 +1,6 @@
 import MongoPackage from 'mongodb';
+import dotenv from 'dotenv';
+import assert from 'assert';
 import { CoveyPlayer, CoveyTown } from './DBTypes';
 import IDBClient from './IDBClient';
 import IMongoDBClient from './IMongoDBClient';
@@ -16,6 +18,7 @@ const coveyTownDB: Database = {
   coveyPlayers: 'coveyPlayers',
 };
 
+dotenv.config();
 
 export default class MongoDBClient implements IDBClient {
   private static _client: MongoDBClient | null = null;
@@ -25,7 +28,8 @@ export default class MongoDBClient implements IDBClient {
   private _dbClient: MongoPackage.MongoClient | null = null;
 
   constructor() {
-    this._url = 'mongodb://localhost:27017';
+    assert(process.env.MONGODB_URL);
+    this._url = process.env.MONGODB_URL;
   }
 
 

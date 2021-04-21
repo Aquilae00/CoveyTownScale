@@ -1,36 +1,55 @@
+/* eslint-disable radix */
 import asyncRedis from 'async-redis';
+import dotenv from 'dotenv';
 import Redis, { Commands, RedisClient } from 'redis';
 import { promisify } from 'util';
+import ioredis from 'ioredis';
 import assert from 'assert';
 import IDBClient from './IDBClient';
 import { CoveyPlayer, CoveyTown } from './DBTypes';
 
 
-type Omit<T, K extends keyof T> = Pick<T, Exclude<keyof T, K>>;
-
-type Omitted = Omit<RedisClient, keyof Commands<boolean>>;
-
-interface Promisified<T = RedisClient>
-  extends Omitted,
-  Commands<Promise<boolean>> { }
+dotenv.config();
 
 export default class RedisDBClient implements IDBClient {
   private static _client: RedisDBClient | null = null;
 
-  private _host: string;
+  private _host1: string;
 
-  private _port: number;
+  private _host2: string;
 
-  private _dbClient: Promisified<RedisClient> | null = null;
+  private _host3: string;
+
+  private _port1: number;
+
+  private _port2: number;
+
+  private _port3: number;
+
+  private _dbClient: ioredis.Cluster | null = null;
 
   constructor() {
-    this._host = '127.0.0.1';
-    this._port = 6379;
+    assert(process.env.REDIS_NODE1);
+    assert(process.env.REDIS_NODE2);
+    assert(process.env.REDIS_NODE3);
+    assert(process.env.REDIS_NODE1_PORT);
+    assert(process.env.REDIS_NODE2_PORT);
+    assert(process.env.REDIS_NODE3_PORT);
+    this._host1 = process.env.REDIS_NODE1;
+    this._host2 = process.env.REDIS_NODE2;
+    this._host3 = process.env.REDIS_NODE3;
+    this._port1 = parseInt(process.env.REDIS_NODE1_PORT);
+    this._port2 = parseInt(process.env.REDIS_NODE2_PORT);
+    this._port3 = parseInt(process.env.REDIS_NODE3_PORT);
   }
 
-  private async setup(): Promise<Promisified<RedisClient>> {
+  private async setup(): Promise<ioredis.Cluster> {
     if (!this._dbClient) {
-      const clientPromise = asyncRedis.createClient({ host: this._host, port: this._port });
+      const clientPromise = new ioredis.Cluster([
+        { host: this._host1, port: this._port1 },
+        { host: this._host2, port: this._port2 },
+        { host: this._host3, port: this._port3 },
+      ]);
       // const client = await clientPromise();
       // const promisifiedClient = asyncRedis.decorate(client);
       this._dbClient = clientPromise;
