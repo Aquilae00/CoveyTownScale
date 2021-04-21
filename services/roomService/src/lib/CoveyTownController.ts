@@ -5,6 +5,8 @@ import Player from '../types/Player';
 import PlayerSession from '../types/PlayerSession';
 import TwilioVideo from './TwilioVideo';
 import IVideoClient from './IVideoClient';
+import { CoveyTown } from '../services/DBTypes';
+import ClusterClient from '../services/ClusterClient';
 
 const friendlyNanoID = customAlphabet('1234567890ABCDEF', 8);
 
@@ -72,12 +74,37 @@ export default class CoveyTownController {
 
   private _capacity: number;
 
+  private _clusterClient: Promise<ClusterClient>;
+
   constructor(friendlyName: string, isPubliclyListed: boolean) {
     this._coveyTownID = (process.env.DEMO_TOWN_ID === friendlyName ? friendlyName : friendlyNanoID());
     this._capacity = 50;
     this._townUpdatePassword = nanoid(24);
     this._isPubliclyListed = isPubliclyListed;
     this._friendlyName = friendlyName;
+    this._clusterClient = ClusterClient.getInstance();
+  }
+
+  toCoveyTown(): CoveyTown {
+    const {
+      coveyTownID,
+      friendlyName,
+      capacity,
+      players,
+      townUpdatePassword,
+      isPubliclyListed,
+    } = this;
+
+    const coveyTown: CoveyTown = {
+      coveyTownID,
+      friendlyName,
+      occupancy: players.length,
+      capacity,
+      players: players.map(p => p.id),
+      townUpdatePassword,
+      isPubliclyListed,
+    };
+    return coveyTown;
   }
 
   /**
@@ -91,6 +118,8 @@ export default class CoveyTownController {
 
     this._sessions.push(theSession);
     this._players.push(newPlayer);
+
+    await (await this._clusterClient).addPlayerToTown(newPlayer.id, this.coveyTownID);
 
     // Create a video token for this user to join this town
     theSession.videoToken = await this._videoClient.getTokenForTown(this._coveyTownID, newPlayer.id);
@@ -106,10 +135,12 @@ export default class CoveyTownController {
    *
    * @param session PlayerSession to destroy
    */
-  destroySession(session: PlayerSession): void {
+  async destroySession(session: PlayerSession): Promise<void> {
+    await (await this._clusterClient).removePlayerFromTown(session.player.id, this.coveyTownID);
     this._players = this._players.filter((p) => p.id !== session.player.id);
     this._sessions = this._sessions.filter((s) => s.sessionToken !== session.sessionToken);
     this._listeners.forEach((listener) => listener.onPlayerDisconnected(session.player));
+
   }
 
   /**
@@ -152,7 +183,8 @@ export default class CoveyTownController {
     return this._sessions.find((p) => p.sessionToken === token);
   }
 
-  disconnectAllPlayers(): void {
+  async disconnectAllPlayers(): Promise<void> {
+    await (await this._clusterClient).deleteTown(this.coveyTownID);
     this._listeners.forEach((listener) => listener.onTownDestroyed());
   }
 }

@@ -4,6 +4,7 @@ import Player from '../types/Player';
 import { CoveyTownList, UserLocation } from '../CoveyTypes';
 import CoveyTownListener from '../types/CoveyTownListener';
 import CoveyTownsStore from '../lib/CoveyTownsStore';
+import ClusterClient from '../services/ClusterClient';
 
 /**
  * The format of a request to join a Town in Covey.Town, as dispatched by the server middleware
@@ -97,7 +98,7 @@ export interface ResponseEnvelope<T> {
  * @param requestData an object representing the player's request
  */
 export async function townJoinHandler(requestData: TownJoinRequest): Promise<ResponseEnvelope<TownJoinResponse>> {
-  const townsStore = CoveyTownsStore.getInstance();
+  const townsStore = await CoveyTownsStore.getInstance();
 
   const coveyTownController = townsStore.getControllerForTown(requestData.coveyTownID);
   if (!coveyTownController) {
@@ -108,6 +109,7 @@ export async function townJoinHandler(requestData: TownJoinRequest): Promise<Res
   }
   const newPlayer = new Player(requestData.userName);
   const newSession = await coveyTownController.addPlayer(newPlayer);
+  await (await ClusterClient.getInstance()).savePlayer(newPlayer);
   assert(newSession.videoToken);
   return {
     isOK: true,
@@ -123,22 +125,22 @@ export async function townJoinHandler(requestData: TownJoinRequest): Promise<Res
 }
 
 export async function townListHandler(): Promise<ResponseEnvelope<TownListResponse>> {
-  const townsStore = CoveyTownsStore.getInstance();
+  const townsStore = await CoveyTownsStore.getInstance();
   return {
     isOK: true,
-    response: { towns: townsStore.getTowns() },
+    response: { towns: await townsStore.getTowns() },
   };
 }
 
 export async function townCreateHandler(requestData: TownCreateRequest): Promise<ResponseEnvelope<TownCreateResponse>> {
-  const townsStore = CoveyTownsStore.getInstance();
+  const townsStore = await CoveyTownsStore.getInstance();
   if (requestData.friendlyName.length === 0) {
     return {
       isOK: false,
       message: 'FriendlyName must be specified',
     };
   }
-  const newTown = townsStore.createTown(requestData.friendlyName, requestData.isPubliclyListed);
+  const newTown = await townsStore.createTown(requestData.friendlyName, requestData.isPubliclyListed);
   return {
     isOK: true,
     response: {
@@ -149,8 +151,8 @@ export async function townCreateHandler(requestData: TownCreateRequest): Promise
 }
 
 export async function townDeleteHandler(requestData: TownDeleteRequest): Promise<ResponseEnvelope<Record<string, null>>> {
-  const townsStore = CoveyTownsStore.getInstance();
-  const success = townsStore.deleteTown(requestData.coveyTownID, requestData.coveyTownPassword);
+  const townsStore = await CoveyTownsStore.getInstance();
+  const success = await townsStore.deleteTown(requestData.coveyTownID, requestData.coveyTownPassword);
   return {
     isOK: success,
     response: {},
@@ -159,8 +161,8 @@ export async function townDeleteHandler(requestData: TownDeleteRequest): Promise
 }
 
 export async function townUpdateHandler(requestData: TownUpdateRequest): Promise<ResponseEnvelope<Record<string, null>>> {
-  const townsStore = CoveyTownsStore.getInstance();
-  const success = townsStore.updateTown(requestData.coveyTownID, requestData.coveyTownPassword, requestData.friendlyName, requestData.isPubliclyListed);
+  const townsStore = await CoveyTownsStore.getInstance();
+  const success = await townsStore.updateTown(requestData.coveyTownID, requestData.coveyTownPassword, requestData.friendlyName, requestData.isPubliclyListed);
   return {
     isOK: success,
     response: {},
@@ -198,12 +200,12 @@ function townSocketAdapter(socket: Socket): CoveyTownListener {
  *
  * @param socket the Socket object that we will use to communicate with the player
  */
-export function townSubscriptionHandler(socket: Socket): void {
+export async function townSubscriptionHandler(socket: Socket): Promise<void> {
   // Parse the client's session token from the connection
   // For each player, the session token should be the same string returned by joinTownHandler
   const { token, coveyTownID } = socket.handshake.auth as { token: string; coveyTownID: string };
 
-  const townController = CoveyTownsStore.getInstance()
+  const townController = (await CoveyTownsStore.getInstance())
     .getControllerForTown(coveyTownID);
 
   // Retrieve our metadata about this player from the TownController
@@ -222,9 +224,9 @@ export function townSubscriptionHandler(socket: Socket): void {
   // Register an event listener for the client socket: if the client disconnects,
   // clean up our listener adapter, and then let the CoveyTownController know that the
   // player's session is disconnected
-  socket.on('disconnect', () => {
+  socket.on('disconnect', async () => {
     townController.removeTownListener(listener);
-    townController.destroySession(s);
+    await townController.destroySession(s);
   });
 
   // Register an event listener for the client socket: if the client updates their
