@@ -1,5 +1,10 @@
 import CoveyTownController from './CoveyTownController';
 import { CoveyTownList } from '../CoveyTypes';
+import RedisDBClient from '../services/RedisClient';
+import IDBClient from '../services/IDBClient';
+import MongoDBClient from '../services/MongoDBClient';
+import ClusterClient from '../services/ClusterClient';
+import { CoveyTown } from '../services/DBTypes';
 
 function passwordMatches(provided: string, expected: string): boolean {
   if (provided === expected) {
@@ -16,9 +21,25 @@ export default class CoveyTownsStore {
 
   private _towns: CoveyTownController[] = [];
 
-  static getInstance(): CoveyTownsStore {
+  private _clusterClient: Promise<ClusterClient>;
+
+  constructor() {
+    this._clusterClient = ClusterClient.getInstance();
+  }
+
+  static async getInstance(): Promise<CoveyTownsStore> {
     if (CoveyTownsStore._instance === undefined) {
       CoveyTownsStore._instance = new CoveyTownsStore();
+      try {
+        const dbClient = await this._instance._clusterClient;
+        const dbTowns = await dbClient.getTowns();
+        dbTowns.forEach(async town => {
+          dbClient.deleteTown(town.coveyTownID);
+          await CoveyTownsStore._instance.createTown(town.friendlyName, town.isPubliclyListed);
+        });
+      } catch (err) {
+        throw new Error(`Failed to Initialize Towns from DB: ${err.toString()}`);
+      }
     }
     return CoveyTownsStore._instance;
   }
@@ -27,23 +48,25 @@ export default class CoveyTownsStore {
     return this._towns.find(town => town.coveyTownID === coveyTownID);
   }
 
-  getTowns(): CoveyTownList {
-    return this._towns.filter(townController => townController.isPubliclyListed)
-      .map(townController => ({
-        coveyTownID: townController.coveyTownID,
-        friendlyName: townController.friendlyName,
-        currentOccupancy: townController.occupancy,
-        maximumOccupancy: townController.capacity,
+  async getTowns(): Promise<CoveyTownList> {
+    const towns = await (await this._clusterClient).getTowns();
+    return towns.filter(coveyTown => coveyTown.isPubliclyListed)
+      .map(coveyTown => ({
+        coveyTownID: coveyTown.coveyTownID,
+        friendlyName: coveyTown.friendlyName,
+        currentOccupancy: coveyTown.occupancy,
+        maximumOccupancy: coveyTown.capacity,
       }));
   }
 
-  createTown(friendlyName: string, isPubliclyListed: boolean): CoveyTownController {
+  async createTown(friendlyName: string, isPubliclyListed: boolean): Promise<CoveyTownController> {
     const newTown = new CoveyTownController(friendlyName, isPubliclyListed);
+    (await this._clusterClient).saveTown(newTown.toCoveyTown());
     this._towns.push(newTown);
     return newTown;
   }
 
-  updateTown(coveyTownID: string, coveyTownPassword: string, friendlyName?: string, makePublic?: boolean): boolean {
+  async updateTown(coveyTownID: string, coveyTownPassword: string, friendlyName?: string, makePublic?: boolean): Promise<boolean> {
     const existingTown = this.getControllerForTown(coveyTownID);
     if (existingTown && passwordMatches(coveyTownPassword, existingTown.townUpdatePassword)) {
       if (friendlyName !== undefined) {
@@ -55,16 +78,18 @@ export default class CoveyTownsStore {
       if (makePublic !== undefined) {
         existingTown.isPubliclyListed = makePublic;
       }
+      await (await this._clusterClient).saveTown(existingTown.toCoveyTown());
       return true;
     }
     return false;
   }
 
-  deleteTown(coveyTownID: string, coveyTownPassword: string): boolean {
+  async deleteTown(coveyTownID: string, coveyTownPassword: string): Promise<boolean> {
     const existingTown = this.getControllerForTown(coveyTownID);
     if (existingTown && passwordMatches(coveyTownPassword, existingTown.townUpdatePassword)) {
       this._towns = this._towns.filter(town => town !== existingTown);
       existingTown.disconnectAllPlayers();
+      await (await this._clusterClient).deleteTown(coveyTownID);
       return true;
     }
     return false;

@@ -1,17 +1,19 @@
 import MongoPackage from 'mongodb';
-import { CoveyTown } from './DBTypes';
+import { CoveyPlayer, CoveyTown } from './DBTypes';
 import IDBClient from './IDBClient';
 import IMongoDBClient from './IMongoDBClient';
 
 interface Database {
   name: string,
-  coveyTowns: string;
+  coveyTowns: string,
+  coveyPlayers: string,
 }
 
 
 const coveyTownDB: Database = {
   name: 'coveytowndb',
   coveyTowns: 'coveyTowns',
+  coveyPlayers: 'coveyPlayers',
 };
 
 
@@ -23,13 +25,14 @@ export default class MongoDBClient implements IDBClient {
   private _dbClient: MongoPackage.MongoClient | null = null;
 
   constructor() {
-    this._url = '';
+    this._url = 'mongodb://localhost:27017';
   }
 
+
   private async setup(): Promise<MongoPackage.MongoClient> {
-    this._dbClient = await MongoPackage.MongoClient.connect(this._url, { useUnifiedTopology: true });
-    process.on('SIGINT', this._dbClient.close);
-    process.on('exit', this._dbClient.close);
+    if (!this._dbClient) {
+      this._dbClient = await MongoPackage.MongoClient.connect(this._url, { useUnifiedTopology: true });
+    }
     return this._dbClient;
   }
 
@@ -57,6 +60,16 @@ export default class MongoDBClient implements IDBClient {
     return MongoDBClient._client;
   }
 
+  async savePlayer(player: CoveyPlayer): Promise<void> {
+    if (!this._dbClient) {
+      throw new Error('dbClient not setup');
+    }
+    const db = coveyTownDB.name;
+    const collection = coveyTownDB.coveyPlayers;
+    const playerdb = this._dbClient.db(db).collection(collection);
+    await playerdb.updateOne({ playerID: player.id }, { $set: player }, { upsert: true });
+  }
+
   async addPlayerToTown(playerID: string, coveyTownID: string): Promise<void> {
     if (!this._dbClient) {
       throw new Error('dbClient not setup');
@@ -66,6 +79,17 @@ export default class MongoDBClient implements IDBClient {
     const collection = coveyTownDB.coveyTowns;
     const towndb = this._dbClient.db(db).collection(collection);
     await towndb.updateOne({ coveyTownID }, { $push: { players: playerID } });
+  }
+
+  async removePlayerFromTown(playerID: string, coveyTownID: string): Promise<void> {
+    if (!this._dbClient) {
+      throw new Error('dbClient not setup');
+    }
+
+    const db = coveyTownDB.name;
+    const collection = coveyTownDB.coveyPlayers;
+    const towndb = this._dbClient.db(db).collection(collection);
+    await towndb.updateOne({ coveyTownID }, { $pull: { players: playerID } });
   }
 
   async saveTown(coveyTown: CoveyTown): Promise<void> {
@@ -88,6 +112,17 @@ export default class MongoDBClient implements IDBClient {
     const towndb = this._dbClient.db(db).collection(collection);
     const coveyTown: CoveyTown | null = await towndb.findOne({ coveyTownID }, { projection: { _id: 0 } });
     return coveyTown;
+  }
+
+  async getTowns(): Promise<CoveyTown[]> {
+    if (!this._dbClient) {
+      throw new Error('dbClient not setup');
+    }
+    const db = coveyTownDB.name;
+    const collection = coveyTownDB.coveyTowns;
+    const towndb = this._dbClient.db(db).collection(collection);
+    const coveyTowns: CoveyTown[] = await towndb.find({}, { projection: { _id: 0 } }).toArray();
+    return coveyTowns;
   }
 
   async deleteTown(coveyTownID: string): Promise<void> {

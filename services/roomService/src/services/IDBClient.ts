@@ -5,5 +5,7 @@ export default interface IDBClient {
   getTown(coveyTownID: string): Promise<CoveyTown | null>;
   deleteTown(coveyTownID: string): Promise<void>;
   addPlayerToTown(playerID: string, coveyTownID: string): Promise<void>;
+  removePlayerFromTown(playerID: string, coveyTownID: string): Promise<void>;
   savePlayer(player: CoveyPlayer): Promise<void>;
+  getTowns(): Promise<CoveyTown[]>;
 }

@@ -5,6 +5,7 @@ import assert from 'assert';
 import IDBClient from './IDBClient';
 import { CoveyPlayer, CoveyTown } from './DBTypes';
 
+
 type Omit<T, K extends keyof T> = Pick<T, Exclude<keyof T, K>>;
 
 type Omitted = Omit<RedisClient, keyof Commands<boolean>>;
@@ -28,12 +29,14 @@ export default class RedisDBClient implements IDBClient {
   }
 
   private async setup(): Promise<Promisified<RedisClient>> {
-    const clientPromise = promisify<RedisClient>(() => Redis.createClient({ host: this._host, port: this._port }));
-    const client = await clientPromise();
-    const promisifiedClient = asyncRedis.decorate(client);
-    this._dbClient = promisifiedClient;
-    process.on('SIGINT', this._dbClient.quit);
-    process.on('exit', this._dbClient.quit);
+    if (!this._dbClient) {
+      const clientPromise = asyncRedis.createClient({ host: this._host, port: this._port });
+      // const client = await clientPromise();
+      // const promisifiedClient = asyncRedis.decorate(client);
+      this._dbClient = clientPromise;
+      process.on('SIGINT', this._dbClient.quit);
+      process.on('exit', this._dbClient.quit);
+    }
     return this._dbClient;
   }
 
@@ -65,6 +68,8 @@ export default class RedisDBClient implements IDBClient {
     if (!this._dbClient) {
       throw new Error('dbClient not setup');
     }
+    await this._dbClient.sadd('towns', coveyTown.coveyTownID);
+
     await this._dbClient.hset(`town:${coveyTown.coveyTownID}`,
       'friendlyName', coveyTown.friendlyName,
       'isPubliclyListed', coveyTown.isPubliclyListed.toString(),
@@ -103,6 +108,36 @@ export default class RedisDBClient implements IDBClient {
     return coveyTown;
   }
 
+  async getTowns(): Promise<CoveyTown[]> {
+    if (!this._dbClient) {
+      throw new Error('dbClient not setup');
+    }
+    const towns: any = await this._dbClient.smembers('towns');
+    const coveyTowns: CoveyTown[] = [];
+    // eslint-disable-next-line no-restricted-syntax
+    for await (const coveyTownID of towns) {
+      assert(this._dbClient);
+      const redisTown: any = await this._dbClient.hgetall(`town:${coveyTownID}`);
+      if (!redisTown) {
+        return [];
+      }
+      const redisPlayers: any = await this._dbClient.smembers(`town:${coveyTownID}:players`);
+      const coveyTown: CoveyTown = {
+        coveyTownID,
+        friendlyName: redisTown.friendlyName,
+        isPubliclyListed: redisTown.isPubliclyListed,
+        capacity: redisTown.capacity,
+        occupancy: redisTown.occupancy,
+        townUpdatePassword: redisTown.townUpdatePassword,
+        players: redisPlayers,
+      };
+      coveyTowns.push(coveyTown);
+      return coveyTowns;
+    }
+    // console.log(coveyTowns);
+    return coveyTowns;
+  }
+
   async deleteTown(coveyTownID: string): Promise<void> {
     if (!this._dbClient) {
       throw new Error('dbClient not setup');
@@ -118,11 +153,17 @@ export default class RedisDBClient implements IDBClient {
     await this._dbClient.sadd(`town:${coveyTownID}:players`, playerID);
   }
 
+  async removePlayerFromTown(playerID: string, coveyTownID: string): Promise<void> {
+    if (!this._dbClient) {
+      throw new Error('dbClient not setup');
+    }
+    await this._dbClient.srem(`town:${coveyTownID}:players`, playerID);
+  }
+
   async savePlayer(player: CoveyPlayer): Promise<void> {
     if (!this._dbClient) {
       throw new Error('dbClient not setup');
     }
-
     await this._dbClient.hset(`player:${player.id}`, 'username', player.userName);
   }
 }
