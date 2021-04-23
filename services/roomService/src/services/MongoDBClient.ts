@@ -27,9 +27,8 @@ export default class MongoDBClient implements IDBClient {
 
   private _dbClient: MongoPackage.MongoClient | null = null;
 
-  constructor() {
-    assert(process.env.MONGODB_URL);
-    this._url = process.env.MONGODB_URL;
+  constructor(url: string) {
+    this._url = url;
   }
 
 
@@ -42,9 +41,10 @@ export default class MongoDBClient implements IDBClient {
 
   public static async setup(): Promise<MongoDBClient> {
     let result = null;
-
+    assert(process.env.MONGODB_URL);
+    const url = process.env.MONGODB_URL;
     if (!MongoDBClient._client) {
-      MongoDBClient._client = new MongoDBClient();
+      MongoDBClient._client = new MongoDBClient(url);
     }
 
     try {

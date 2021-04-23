@@ -28,22 +28,17 @@ export default class RedisDBClient implements IDBClient {
 
   private _dbClient: ioredis.Cluster | null = null;
 
-  constructor() {
-    assert(process.env.REDIS_NODE1);
-    assert(process.env.REDIS_NODE2);
-    assert(process.env.REDIS_NODE3);
-    assert(process.env.REDIS_NODE1_PORT);
-    assert(process.env.REDIS_NODE2_PORT);
-    assert(process.env.REDIS_NODE3_PORT);
-    this._host1 = process.env.REDIS_NODE1;
-    this._host2 = process.env.REDIS_NODE2;
-    this._host3 = process.env.REDIS_NODE3;
-    this._port1 = parseInt(process.env.REDIS_NODE1_PORT);
-    this._port2 = parseInt(process.env.REDIS_NODE2_PORT);
-    this._port3 = parseInt(process.env.REDIS_NODE3_PORT);
+  constructor(host1: string, host2: string, host3: string, port1: number, port2: number, port3: number) {
+    this._host1 = host1;
+    this._host2 = host2;
+    this._host3 = host3;
+    this._port1 = port1;
+    this._port2 = port2;
+    this._port3 = port3;
   }
 
   private async setup(): Promise<ioredis.Cluster> {
+
     if (!this._dbClient) {
       const clientPromise = new ioredis.Cluster([
         { host: this._host1, port: this._port1 },
@@ -62,8 +57,21 @@ export default class RedisDBClient implements IDBClient {
   public static async setup(): Promise<RedisDBClient> {
     let result = null;
 
+    // assert(process.env.REDIS_NODE1);
+    // assert(process.env.REDIS_NODE2);
+    // assert(process.env.REDIS_NODE3);
+    // assert(process.env.REDIS_NODE1_PORT);
+    // assert(process.env.REDIS_NODE2_PORT);
+    // assert(process.env.REDIS_NODE3_PORT);
+    // const host1 = process.env.REDIS_NODE1;
+    // const host2 = process.env.REDIS_NODE2;
+    // const host3 = process.env.REDIS_NODE3;
+    // const port1 = parseInt(process.env.REDIS_NODE1_PORT);
+    // const port2 = parseInt(process.env.REDIS_NODE2_PORT);
+    // const port3 = parseInt(process.env.REDIS_NODE3_PORT);
+
     if (!RedisDBClient._client) {
-      RedisDBClient._client = new RedisDBClient();
+      RedisDBClient._client = new RedisDBClient('18.191.254.61', '18.191.254.61', '18.191.254.61', 30001, 30002, 30003);
     }
 
     try {
